@@ -65,8 +65,11 @@ def _check_auth(user, pwd):
 
 @app.before_request
 def _require_auth():
-    """HTTP Basic Auth на все роуты, если задан APP_PASSWORD."""
+    """HTTP Basic Auth на все роуты, если задан APP_PASSWORD.
+    /health исключён — нужен для health-check без авторизации."""
     if not AUTH_ON:
+        return None
+    if request.path == "/health":
         return None
     auth = request.authorization
     if auth and _check_auth(auth.username, auth.password):
