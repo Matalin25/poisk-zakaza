@@ -226,6 +226,11 @@ def index():
     return Response(INDEX_HTML, mimetype="text/html")
 
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/status")
 def api_status():
     return jsonify({
