@@ -389,9 +389,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <label>Категории заказов</label>
       <div class="checks" id="cats">
         <label class="chk on"><input type="checkbox" value="tracker" checked>Трекеры / канбан</label>
-        <label class="chk"><input type="checkbox" value="automation">Автоматизация / боты</label>
-        <label class="chk"><input type="checkbox" value="development">Разработка приложений</label>
-        <label class="chk"><input type="checkbox" value="crm">CRM / ERP / 1С</label>
+        <label class="chk on"><input type="checkbox" value="automation" checked>Автоматизация / боты</label>
+        <label class="chk on"><input type="checkbox" value="development" checked>Разработка приложений / сайтов</label>
+        <label class="chk on"><input type="checkbox" value="crm" checked>CRM / ERP / 1С</label>
+        <label class="chk"><input type="checkbox" value="design">Дизайн / UI/UX</label>
+        <label class="chk"><input type="checkbox" value="marketing">Маркетинг / SEO / SMM</label>
+        <label class="chk"><input type="checkbox" value="mobile">Мобильная разработка</label>
+        <label class="chk"><input type="checkbox" value="frontend">Frontend / вёрстка</label>
+        <label class="chk"><input type="checkbox" value="backend">Backend / API</label>
+        <label class="chk"><input type="checkbox" value="devops">DevOps / серверы / БД</label>
+        <label class="chk"><input type="checkbox" value="analytics">Аналитика / BI / DS</label>
+        <label class="chk"><input type="checkbox" value="testing">Тестирование / QA</label>
+        <label class="chk"><input type="checkbox" value="ai">AI / Нейросети / ML</label>
+        <label class="chk"><input type="checkbox" value="copywriting">Копирайтинг / переводы</label>
+        <label class="chk"><input type="checkbox" value="video">Видео / анимация / 3D</label>
+        <label class="chk"><input type="checkbox" value="security">Кибербезопасность</label>
         <label class="chk"><input type="checkbox" id="allcats">Искать всё</label>
       </div>
     </div>
@@ -545,7 +557,14 @@ async function loadHistory(){
 }
 
 function catLabel(c){
-  return {tracker:"Трекер/канбан", automation:"Автоматизация", development:"Разработка", crm:"CRM/1С"}[c] || c;
+  return {
+    tracker:"Трекер/канбан", automation:"Автоматизация", development:"Разработка",
+    crm:"CRM/1С", design:"Дизайн/UI", marketing:"Маркетинг/SEO",
+    mobile:"Мобильная", frontend:"Frontend", backend:"Backend",
+    devops:"DevOps/БД", analytics:"Аналитика/DS", testing:"Тестирование/QA",
+    ai:"AI/Нейросети", copywriting:"Копирайтинг", video:"Видео/3D",
+    security:"Безопасность"
+  }[c] || c;
 }
 
 function render(){
