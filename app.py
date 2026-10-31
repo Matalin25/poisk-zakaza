@@ -404,6 +404,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <label class="chk"><input type="checkbox" value="copywriting">Копирайтинг / переводы</label>
         <label class="chk"><input type="checkbox" value="video">Видео / анимация / 3D</label>
         <label class="chk"><input type="checkbox" value="security">Кибербезопасность</label>
+        <label class="chk"><input type="checkbox" value="content">Чек-листы / гайды / шаблоны / PDF</label>
         <label class="chk"><input type="checkbox" id="allcats">Искать всё</label>
       </div>
     </div>
@@ -563,7 +564,7 @@ function catLabel(c){
     mobile:"Мобильная", frontend:"Frontend", backend:"Backend",
     devops:"DevOps/БД", analytics:"Аналитика/DS", testing:"Тестирование/QA",
     ai:"AI/Нейросети", copywriting:"Копирайтинг", video:"Видео/3D",
-    security:"Безопасность"
+    security:"Безопасность", content:"Чек-листы/гайды"
   }[c] || c;
 }
 

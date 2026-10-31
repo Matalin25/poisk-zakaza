@@ -147,6 +147,68 @@ def _stem_hit(text, stems):
     return False
 
 
+def _strip_endings(term):
+    """Срезает распространённые русские окончания для лучшего поиска.
+    'шаблоны' -> 'шаблон', 'контактов' -> 'контакт'"""
+    endings = ["иями", "иях", "ами", "ями", "ого", "его", "ому", "ему",
+               "ами", "ями", "ах", "ях", "ов", "ев", "ам", "ям",
+               "ой", "ей", "ый", "ий", "ая", "яя", "ое", "ее",
+               "ы", "и", "а", "я", "у", "ю", "о", "е", "ь"]
+    for end in endings:
+        if term.endswith(end) and len(term) - len(end) >= 3:
+            return term[:-len(end)]
+    return term
+
+
+def matches_query(name, desc, query):
+    """Проверяет, попадает ли заказ под произвольный поисковый запрос.
+
+    Используем гибкую логику:
+    - 1 термин → поиск по корню (шаблон находит шаблонов)
+    - 2 термина → оба должны совпасть (AND)
+    - 3+ терминов → хотя бы половина должна совпасть (мягкий AND)
+    """
+    if not query:
+        return True
+    # Приводим ВСЁ к нижнему регистру (включая заголовок)
+    title_lower = (name or "").lower()
+    desc_lower = (desc or "").lower()
+    text = f"{title_lower} {desc_lower}"
+    terms = [t.strip().lower() for t in re.split(r"[\s,]+", query) if t.strip()]
+    if not terms:
+        return True
+
+    def _term_found(term):
+        # 1) Точное вхождение
+        if term in text:
+            return True
+        # 2) Regex поиск по корню (шаблон → шаблонов)
+        if re.search(r"(?<![а-яёa-z])" + re.escape(term), text):
+            return True
+        # 3) Нормализация окончаний: шаблоны → шаблон, контактов → контакт
+        stem = _strip_endings(term)
+        if stem != term and stem in text:
+            return True
+        if stem != term and re.search(r"(?<![а-яёa-z])" + re.escape(stem), text):
+            return True
+        # 4) Обратная проверка: может быть термин содержится в keyword?
+        # Например keyword "подборк" содержится в термине "подборка"
+        for keyword in _CAT_KEYWORDS.get("content", []):
+            if keyword in term or term in keyword:
+                if keyword in text or re.search(r"(?<![а-яёa-z])" + re.escape(keyword), text):
+                    return True
+        return False
+
+    if len(terms) == 1:
+        return _term_found(terms[0])
+    if len(terms) == 2:
+        return all(_term_found(t) for t in terms)
+    # 3+ терминов: нужно хотя бы ceil(n/2) совпадений
+    needed = (len(terms) + 1) // 2
+    matched = sum(1 for t in terms if _term_found(t))
+    return matched >= needed
+
+
 def matches_tracker(name, desc):
     title = (name or "").lower()
     # убираем URL, чтобы названия сервисов из ссылок не давали ложных срабатываний
@@ -253,6 +315,7 @@ CATEGORIES = {
     "copywriting": "Копирайтинг / переводы / контент",
     "video": "Видео / анимация / 3D",
     "security": "Кибербезопасность",
+    "content": "Чек-листы / гайды / шаблоны / PDF",
 }
 
 _CAT_KEYWORDS = {
@@ -365,6 +428,21 @@ _CAT_KEYWORDS = {
         "ddos", "ddos protection", "hack", "взлом", "защит", "антивирус",
         "soc", "siem", "incident response", "forensic", "forensics",
     ],
+    "content": [
+        "чек-лист", "чеклист", "checklist", "чек-листы", "чеклисты",
+        "гайд", "guide", "мини-гайд", "мини гайд", "гайды",
+        "подборк", "подборка", "подборки",
+        "шаблон", "template", "шаблоны", "шаблонов", "template",
+        "pdf", "пдф", "лид-магнит", "lead magnet", "лид магнит",
+        "магнит", "ebook", "ебук", "книг",
+        "инструкци", "инструкт", "руководств", "руководство",
+        "онбординг", "onboarding", "welcome pack",
+        "памятк", "памятка", "brochure", "брошюр",
+        "презентац", "presentation", "презентация",
+        "карточк", "карточка", "карточки",
+        "контакт", "сбор контак", "база контак",
+        "email сбор", "form", "форма заяв", "опросник", "анкет",
+    ],
 }
 
 
@@ -384,15 +462,6 @@ def classify(name, desc):
     if not cats and matches_related(name, desc):
         cats.append("development")
     return cats
-
-
-def matches_query(name, desc, query):
-    """Проверяет, попадает ли заказ под произвольный поисковый запрос."""
-    if not query:
-        return True
-    text = full_lower(desc, name)
-    terms = [t.strip().lower() for t in re.split(r"[\s,]+", query) if t.strip()]
-    return all(t in text for t in terms)
 
 
 def _proxies(url):
