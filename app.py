@@ -17,6 +17,7 @@ import re
 import io
 import csv
 import hmac
+import time
 import threading
 import webbrowser
 from functools import wraps
@@ -45,7 +46,8 @@ storage.init()
 # Данные последнего успешного поиска (кэш) + защита от параллельных запусков
 _CACHE = {"rows": [], "meta": {}}
 _LOCK = threading.Lock()
-_RUNNING = {"flag": False}
+_RUNNING = {"flag": False, "since": None}
+_RUNNING_TIMEOUT = 600  # 10 минут — если поиск длится дольше, считаем зависшим
 
 _SOURCE_FUNCS = {
     "fl": ("FL.ru", P.parse_flru),
@@ -264,8 +266,14 @@ def api_history_clear():
 
 @app.route("/api/search")
 def api_search():
+    # Если флаг застрял дольше таймаута — сбрасываем (воркер мог зависнуть)
     if _RUNNING["flag"]:
-        return jsonify({"error": "Поиск уже выполняется, подождите..."}), 409
+        since = _RUNNING.get("since")
+        if since and (time.time() - since) > _RUNNING_TIMEOUT:
+            print(f"[!] Сброс зависшего флага поиска (висит {time.time() - since:.0f} сек)")
+            _RUNNING["flag"] = False
+        else:
+            return jsonify({"error": "Поиск уже выполняется, подождите..."}), 409
 
     sources = request.args.get("sources", "").split(",")
     sources = [s for s in sources if s] or list(_SOURCE_FUNCS.keys())
@@ -275,6 +283,7 @@ def api_search():
 
     with _LOCK:
         _RUNNING["flag"] = True
+        _RUNNING["since"] = time.time()
     try:
         rows = _collect(sources, pages, query, categories)
         _CACHE["rows"] = rows
