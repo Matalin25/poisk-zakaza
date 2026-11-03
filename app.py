@@ -555,15 +555,30 @@ async function search(){
 
   go.disabled = true;
   status.innerHTML = '<span class="spinner"></span>Идёт сбор заказов... это может занять 1-3 минуты';
-  try{
-    let r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
-    // Если 409 (флаг застрял) — сбрасываем и пробуем снова
-    if(r.status === 409){
-      await fetch("/api/search/reset", {method:"POST", credentials:'include'});
-      status.textContent = "Сброс зависшего поиска... повтор...";
-      await new Promise(r=>setTimeout(r, 1000));
-      r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
+  
+  // Функция поиска с авто-повтором при обрыве соединения
+  async function trySearch(attempt){
+    try{
+      let r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
+      if(r.status === 409){
+        await fetch("/api/search/reset", {method:"POST", credentials:'include'});
+        status.textContent = "Сброс зависшего поиска... повтор ("+attempt+")...";
+        await new Promise(r=>setTimeout(r, 1000));
+        r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
+      }
+      return r;
+    }catch(e){
+      if(attempt < 3){
+        status.textContent = "Соединение оборвано, повтор ("+attempt+"/3)...";
+        await new Promise(r=>setTimeout(r, 3000 * attempt));
+        return trySearch(attempt + 1);
+      }
+      throw e;
     }
+  }
+  
+  try{
+    const r = await trySearch(1);
     const data = await r.json();
     if(r.status === 409){ status.textContent = "Поиск ещё выполняется, попробуйте через минуту"; go.disabled=false; return; }
     if(data.error){ status.textContent = "Ошибка: "+data.error; go.disabled=false; return; }
