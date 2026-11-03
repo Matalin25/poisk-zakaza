@@ -282,7 +282,10 @@ def api_search():
             print(f"[!] Сброс зависшего флага поиска (висит {time.time() - since:.0f} сек)")
             _RUNNING["flag"] = False
         else:
-            return jsonify({"error": "Поиск уже выполняется, подождите..."}), 409
+            # Флаг активен менее 10 минут — но предыдущий поиск мог быть убит
+            # На всякий случай тоже сбрасываем и запускаем новый
+            print(f"[!] Принудительный сброс флага поиска")
+            _RUNNING["flag"] = False
 
     sources = request.args.get("sources", "").split(",")
     sources = [s for s in sources if s] or list(_SOURCE_FUNCS.keys())
