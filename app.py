@@ -544,7 +544,7 @@ async function search(){
   go.disabled = true;
   status.innerHTML = '<span class="spinner"></span>Идёт сбор заказов... это может занять 1-3 минуты';
   try{
-    const r = await fetch("/api/search?"+params.toString());
+    const r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
     const data = await r.json();
     if(data.error){ status.textContent = "Ошибка: "+data.error; go.disabled=false; return; }
     ALL = data.rows || [];
@@ -562,7 +562,7 @@ async function loadHistory(){
   const status = document.getElementById("status");
   status.innerHTML = '<span class="spinner"></span>Загружаю историю...';
   try{
-    const r = await fetch("/api/history?limit=1000");
+    const r = await fetch("/api/history?limit=1000", {credentials:'include'});
     const data = await r.json();
     ALL = (data.rows || []).map(r=>({...r, is_new:false}));
     META = {history:true, stats:data.stats};
@@ -665,6 +665,7 @@ async function doExport(format){
   try{
     const r = await fetch("/api/export", {
       method:"POST",
+      credentials:"include",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({format, rows: FILTERED})
     });
