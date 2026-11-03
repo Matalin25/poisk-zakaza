@@ -264,6 +264,15 @@ def api_history_clear():
     return jsonify({"ok": True, "stats": storage.stats()})
 
 
+@app.route("/api/search/reset", methods=["POST"])
+def api_search_reset():
+    """Сброс зависшего флага поиска."""
+    with _LOCK:
+        _RUNNING["flag"] = False
+        _RUNNING["since"] = None
+    return jsonify({"ok": True, "running": False})
+
+
 @app.route("/api/search")
 def api_search():
     # Если флаг застрял дольше таймаута — сбрасываем (воркер мог зависнуть)
@@ -544,8 +553,16 @@ async function search(){
   go.disabled = true;
   status.innerHTML = '<span class="spinner"></span>Идёт сбор заказов... это может занять 1-3 минуты';
   try{
-    const r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
+    let r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
+    // Если 409 (флаг застрял) — сбрасываем и пробуем снова
+    if(r.status === 409){
+      await fetch("/api/search/reset", {method:"POST", credentials:'include'});
+      status.textContent = "Сброс зависшего поиска... повтор...";
+      await new Promise(r=>setTimeout(r, 1000));
+      r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
+    }
     const data = await r.json();
+    if(r.status === 409){ status.textContent = "Поиск ещё выполняется, попробуйте через минуту"; go.disabled=false; return; }
     if(data.error){ status.textContent = "Ошибка: "+data.error; go.disabled=false; return; }
     ALL = data.rows || [];
     META = data.meta || {};
