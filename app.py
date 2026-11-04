@@ -49,6 +49,16 @@ _LOCK = threading.Lock()
 _RUNNING = {"flag": False, "since": None}
 _RUNNING_TIMEOUT = 600  # 10 минут — если поиск длится дольше, считаем зависшим
 
+# Асинхронный поиск (фоновый поток + состояние)
+_SEARCH_STATE = {
+    "thread": None,
+    "status": "idle",       # idle | running | done | error
+    "progress": "",
+    "rows": [],
+    "meta": {},
+    "error": "",
+}
+
 _SOURCE_FUNCS = {
     "fl": ("FL.ru", P.parse_flru),
     "freelance": ("freelance.ru", P.parse_freelance_ru),
@@ -270,58 +280,90 @@ def api_search_reset():
     with _LOCK:
         _RUNNING["flag"] = False
         _RUNNING["since"] = None
+    _SEARCH_STATE["status"] = "idle"
+    _SEARCH_STATE["thread"] = None
     return jsonify({"ok": True, "running": False})
 
 
-@app.route("/api/search")
-def api_search():
-    # Если флаг застрял дольше таймаута — сбрасываем (воркер мог зависнуть)
-    if _RUNNING["flag"]:
-        since = _RUNNING.get("since")
-        if since and (time.time() - since) > _RUNNING_TIMEOUT:
-            print(f"[!] Сброс зависшего флага поиска (висит {time.time() - since:.0f} сек)")
-            _RUNNING["flag"] = False
-        else:
-            # Флаг активен менее 10 минут — но предыдущий поиск мог быть убит
-            # На всякий случай тоже сбрасываем и запускаем новый
-            print(f"[!] Принудительный сброс флага поиска")
-            _RUNNING["flag"] = False
-
-    sources = request.args.get("sources", "").split(",")
-    sources = [s for s in sources if s] or list(_SOURCE_FUNCS.keys())
-    pages = request.args.get("pages", "3")
-    query = request.args.get("q", "").strip()
-    categories = [c for c in request.args.get("categories", "").split(",") if c]
-
-    with _LOCK:
-        _RUNNING["flag"] = True
-        _RUNNING["since"] = time.time()
+def _background_search(sources, pages, query, categories):
+    """Фоновый поиск — выполняется в отдельном потоке."""
     try:
+        _SEARCH_STATE["status"] = "running"
+        _SEARCH_STATE["progress"] = "Запуск..."
         rows = _collect(sources, pages, query, categories)
-        _CACHE["rows"] = rows
-        _CACHE["meta"] = {
+        _SEARCH_STATE["rows"] = rows
+        _SEARCH_STATE["meta"] = {
             "sources": sources,
             "pages": pages,
             "query": query,
             "categories": categories,
             "count": len(rows),
         }
-        # сохраняем в историю и помечаем новые заказы
         seen_before = storage.known_keys()
-        storage.save_run(rows, _CACHE["meta"])
+        storage.save_run(rows, _SEARCH_STATE["meta"])
         new_keys = [r.get("link") or f"{r.get('source','')}:{r.get('name','')}"
                     for r in rows]
         new_set = {k for k in new_keys if k not in seen_before}
         for r in rows:
             key = r.get("link") or f"{r.get('source','')}:{r.get('name','')}"
             r["is_new"] = key in new_set
-        _CACHE["meta"]["new"] = len(new_set)
-        return jsonify({"rows": rows, "meta": _CACHE["meta"]})
+        _SEARCH_STATE["meta"]["new"] = len(new_set)
+        _CACHE["rows"] = rows
+        _CACHE["meta"] = _SEARCH_STATE["meta"]
+        _SEARCH_STATE["status"] = "done"
+        _SEARCH_STATE["progress"] = "Готово"
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        _SEARCH_STATE["status"] = "error"
+        _SEARCH_STATE["error"] = str(e)
+        _SEARCH_STATE["progress"] = f"Ошибка: {e}"
     finally:
         with _LOCK:
             _RUNNING["flag"] = False
+            _RUNNING["since"] = None
+
+
+@app.route("/api/search/start", methods=["GET"])
+def api_search_start():
+    """Запуск поиска в фоне — возвращает мгновенно."""
+    if _SEARCH_STATE["status"] == "running":
+        return jsonify({"error": "Поиск уже выполняется"}), 409
+
+    sources = request.args.get("sources", "").split(",")
+    sources = [s for s in sources if s] or list(_SOURCE_FUNCS.keys())
+    pages = request.args.get("pages", "1")
+    query = request.args.get("q", "").strip()
+    categories = [c for c in request.args.get("categories", "").split(",") if c]
+
+    # Сброс состояния
+    _SEARCH_STATE["status"] = "running"
+    _SEARCH_STATE["progress"] = "Запуск..."
+    _SEARCH_STATE["rows"] = []
+    _SEARCH_STATE["meta"] = {}
+    _SEARCH_STATE["error"] = ""
+
+    with _LOCK:
+        _RUNNING["flag"] = True
+        _RUNNING["since"] = time.time()
+
+    t = threading.Thread(target=_background_search,
+                         args=(sources, pages, query, categories),
+                         daemon=True)
+    _SEARCH_STATE["thread"] = t
+    t.start()
+
+    return jsonify({"ok": True, "status": "running"})
+
+
+@app.route("/api/search/poll", methods=["GET"])
+def api_search_poll():
+    """Поллинг статуса поиска — быстрый запрос (<100мс)."""
+    return jsonify({
+        "status": _SEARCH_STATE["status"],
+        "progress": _SEARCH_STATE["progress"],
+        "rows": _SEARCH_STATE["rows"] if _SEARCH_STATE["status"] == "done" else [],
+        "meta": _SEARCH_STATE["meta"] if _SEARCH_STATE["status"] == "done" else {},
+        "error": _SEARCH_STATE["error"],
+    })
 
 
 @app.route("/api/export", methods=["POST"])
@@ -554,37 +596,59 @@ async function search(){
   params.set("categories", allcats ? "" : cats.join(","));
 
   go.disabled = true;
-  status.innerHTML = '<span class="spinner"></span>Идёт сбор заказов... это может занять 1-3 минуты';
-  
-  // Функция поиска с авто-повтором при обрыве соединения
-  async function trySearch(attempt){
-    try{
-      let r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
-      if(r.status === 409){
-        await fetch("/api/search/reset", {method:"POST", credentials:'include'});
-        status.textContent = "Сброс зависшего поиска... повтор ("+attempt+")...";
-        await new Promise(r=>setTimeout(r, 1000));
-        r = await fetch("/api/search?"+params.toString(), {credentials:'include'});
-      }
-      return r;
-    }catch(e){
-      if(attempt < 3){
-        status.textContent = "Соединение оборвано, повтор ("+attempt+"/3)...";
-        await new Promise(r=>setTimeout(r, 3000 * attempt));
-        return trySearch(attempt + 1);
-      }
-      throw e;
-    }
-  }
-  
+
+  // 1. Запуск поиска в фоне (мгновенный ответ)
   try{
-    const r = await trySearch(1);
+    const r = await fetch("/api/search/start?"+params.toString(), {credentials:'include'});
     const data = await r.json();
-    if(r.status === 409){ status.textContent = "Поиск ещё выполняется, попробуйте через минуту"; go.disabled=false; return; }
-    if(data.error){ status.textContent = "Ошибка: "+data.error; go.disabled=false; return; }
-    ALL = data.rows || [];
-    META = data.meta || {};
-    const nw = META.new || 0;
+    if(r.status === 409){
+      // Предыдущий поиск ещё идёт — сбросить и начать заново
+      await fetch("/api/search/reset", {method:"POST", credentials:'include'});
+      await new Promise(r=>setTimeout(r, 500));
+      const r2 = await fetch("/api/search/start?"+params.toString(), {credentials:'include'});
+    }
+  }catch(e){
+    status.textContent = "Ошибка запуска: "+e;
+    go.disabled = false;
+    return;
+  }
+
+  // 2. Поллинг статуса каждые 2 секунды
+  status.innerHTML = '<span class="spinner"></span>Идёт сбор заказов...';
+  const pollInterval = setInterval(async ()=>{
+    try{
+      const r = await fetch("/api/search/poll", {credentials:'include'});
+      const d = await r.json();
+      if(d.status === "running"){
+        status.innerHTML = '<span class="spinner"></span>'+d.progress;
+      } else if(d.status === "done"){
+        clearInterval(pollInterval);
+        ALL = d.rows || [];
+        META = d.meta || {};
+        const nw = META.new || 0;
+        status.textContent = "Найдено: "+ALL.length+(nw ? " (новых: "+nw+")" : "");
+        render();
+        go.disabled = false;
+      } else if(d.status === "error"){
+        clearInterval(pollInterval);
+        status.textContent = "Ошибка: "+d.error;
+        go.disabled = false;
+      }
+    }catch(e){
+      // Обрыв соединения при поллинге — не критично, повторим
+      status.innerHTML = '<span class="spinner"></span>Проверка статуса...';
+    }
+  }, 2000);
+
+  // Таймаут на случай если поллинг завис (5 минут)
+  setTimeout(()=>{
+    clearInterval(pollInterval);
+    if(go.disabled){
+      status.textContent = "Поиск занял слишком долго. Попробуйте уменьшить кол-во страниц.";
+      go.disabled = false;
+    }
+  }, 300000);
+}
     status.textContent = "Найдено заказов: "+ALL.length+(nw ? " (новых: "+nw+")" : "");
     render();
   }catch(e){
