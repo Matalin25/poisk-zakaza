@@ -649,13 +649,6 @@ async function search(){
     }
   }, 300000);
 }
-    status.textContent = "Найдено заказов: "+ALL.length+(nw ? " (новых: "+nw+")" : "");
-    render();
-  }catch(e){
-    status.textContent = "Ошибка соединения: "+e;
-  }
-  go.disabled = false;
-}
 
 async function loadHistory(){
   const status = document.getElementById("status");
