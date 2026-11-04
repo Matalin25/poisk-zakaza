@@ -453,7 +453,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
     <div>
       <label>Страниц ленты на источник</label>
-      <input id="pages" type="number" min="1" max="20" value="3">
+      <input id="pages" type="number" min="1" max="20" value="1">
     </div>
   </div>
   <div class="row">
@@ -545,7 +545,7 @@ async function search(){
   const allcats = document.getElementById("allcats").checked;
   const srcs = selected("srcs");
   const q = document.getElementById("q").value.trim();
-  const pages = document.getElementById("pages").value || "3";
+  const pages = document.getElementById("pages").value || "1";
 
   const params = new URLSearchParams();
   params.set("sources", srcs.join(","));
