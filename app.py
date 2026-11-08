@@ -564,11 +564,14 @@ function bindChk(containerId){
     chk.classList.toggle("on", inp.checked);
     inp.addEventListener("change", ()=>{
       chk.classList.toggle("on", inp.checked);
-      if(containerId==="cats" && inp.checked) document.getElementById("allcats").checked=false;
       if(containerId==="cats" && inp.id==="allcats" && inp.checked){
         document.querySelectorAll("#cats input").forEach(x=>{
           if(x.id!=="allcats"){ x.checked=false; x.closest(".chk").classList.remove("on"); }
         });
+      } else if(containerId==="cats" && inp.checked){
+        const all = document.getElementById("allcats");
+        all.checked = false;
+        all.closest(".chk").classList.remove("on");
       }
     });
   });

@@ -430,7 +430,7 @@ _CAT_KEYWORDS = {
         "видео", "video", "монтаж", "editing", "after effects", "premiere",
         "давинчи", "davinci", "final cut", "анимаци", "animation", "motion",
         "моушн", "3d", " blender", "maya", "cinema 4d", "render", "рендер",
-        "озвучк", "voiceover", "саунд", "звук", "аудио", "podcast",
+        "озвучк", "voiceover", "саунд", "звук", "аудио", "джингл", "jingle", "podcast",
         "подкаст", "стрим", "stream", "youtube", "rutube",
     ],
     "security": [
